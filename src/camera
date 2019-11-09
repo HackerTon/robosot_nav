@@ -2,79 +2,96 @@
 
 import rospy
 from cv_bridge import CvBridge, CvBridgeError
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import CompressedImage
 import cv2
 import numpy as np
 
-min_va = np.asarray([0, 0, 0])
-max_va = np.asarray([0, 0, 0])
+# min_va = np.asarray([0, 0, 0])
+# max_va = np.asarray([0, 0, 0])
 
 # RED
-# min_va = np.asarray([0, 0, 255])
-# max_va = np.asarray([30, 10, 255])
+min_red = np.asarray([0, 25, 0])
+max_red = np.asarray([10, 255, 255])
 
 # YELLOW
-# min_va = np.asarray([0, 20, 255])
-# max_va = np.asarray([30, 105, 255])
+min_yellow = np.asarray([20, 25, 0])
+max_yellow = np.asarray([105, 255, 255])
 
 # BLUE
-# min_va = np.asarray([0, 105, 255])
-# max_va = np.asarray([30, 143, 255])
+min_blue = np.asarray([120, 25, 0])
+max_blue = np.asarray([143, 255, 255])
 
 
-def on_trackbar(val):
-    min_va[0] = val
+# def on_trackbar(val):
+#     min_va[0] = val
 
 
-def on_trackbar2(val):
-    min_va[1] = val
+# def on_trackbar2(val):
+#     min_va[1] = val
 
 
-def on_trackbar3(val):
-    min_va[2] = val
+# def on_trackbar3(val):
+#     min_va[2] = val
 
 
-def on_trackbara(val):
-    max_va[0] = val
+# def on_trackbara(val):
+#     max_va[0] = val
 
 
-def on_trackbarb(val):
-    max_va[1] = val
+# def on_trackbarb(val):
+#     max_va[1] = val
 
 
-def on_trackbarc(val):
-    max_va[2] = val
+# def on_trackbarc(val):
+#     max_va[2] = val
+
+
+def compute_contours(image, org_image, range_min, range_max, color=(255, 255, 255)):
+    binary_image = cv2.inRange(image, range_min, range_max)
+
+    _, contours, _ = cv2.findContours(
+        binary_image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    sorted_contours = [cnt for cnt in contours if cv2.contourArea(cnt) > 60]
+
+    for contour in sorted_contours:
+        (x, y), r = cv2.minEnclosingCircle(contour)
+        cv2.circle(org_image, (int(x), int(y)), int(r), color, 2)
+
+    return True
 
 
 class cv_converter:
     def __init__(self):
-        self.image_sub = rospy.Subscriber("camera/image", Image, self.callback)
+        self.image_sub = rospy.Subscriber(
+            "camera/image/compressed", CompressedImage, self.callback)
 
         self.bridge = CvBridge()
 
     def callback(self, data):
-        cv2.namedWindow('Image after')
+        # cv2.namedWindow('Image after')
         cv2.namedWindow('Image before')
 
         try:
-            cv_image = self.bridge.imgmsg_to_cv2(data, "bgr8")
+            cv_image = self.bridge.compressed_imgmsg_to_cv2(data)
         except CvBridgeError as e:
             print(e)
 
         org_image = cv_image
-
         cv_image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2HSV)
 
-        cv_image = cv2.inRange(cv_image, min_va, max_va)
+        compute_contours(cv_image, org_image, min_red, max_red, (255, 255, 0))
+        compute_contours(cv_image, org_image, min_blue, max_blue, (255, 0, 255))
+        compute_contours(cv_image, org_image, min_yellow, max_yellow, (255, 255, 255))
 
-        cv2.createTrackbar('a', 'Image after', 0, 255, on_trackbar)
-        cv2.createTrackbar('b', 'Image after', 0, 255, on_trackbar2)
-        cv2.createTrackbar('c', 'Image after', 0, 255, on_trackbar3)
-        cv2.createTrackbar('1', 'Image after', 0, 255, on_trackbara)
-        cv2.createTrackbar('2', 'Image after', 0, 255, on_trackbarb)
-        cv2.createTrackbar('3', 'Image after', 0, 255, on_trackbarc)
+        # cv2.createTrackbar('a', 'Image after', 0, 255, on_trackbar)
+        # cv2.createTrackbar('b', 'Image after', 0, 255, on_trackbar2)
+        # cv2.createTrackbar('c', 'Image after', 0, 255, on_trackbar3)
+        # cv2.createTrackbar('1', 'Image after', 0, 255, on_trackbara)
+        # cv2.createTrackbar('2', 'Image after', 0, 255, on_trackbarb)
+        # cv2.createTrackbar('3', 'Image after', 0, 255, on_trackbarc)
 
-        cv2.imshow('Image after', cv_image)
+        # cv2.imshow('Image after', cv_image)
         cv2.imshow('Image before', org_image)
         cv2.waitKey(1)
 
