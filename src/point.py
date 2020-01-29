@@ -57,11 +57,11 @@ class cv_converter:
         minDist = rows / 8
         param1 = 77
         param2 = 19
-        minRadius = 8
-        maxRadius = 49
+        minRadius = 0
+        maxRadius = 40
 
         gray = cv2.cvtColor(src, cv2.COLOR_BGR2GRAY)
-        gray = cv2.medianBlur(gray, blur)
+        gray = cv2.GaussianBlur(gray, (9, 9), 2, 2)
 
         rows = gray.shape[0]
         circles = cv2.HoughCircles(gray, cv2.HOUGH_GRADIENT, dp, minDist,
@@ -75,9 +75,9 @@ class cv_converter:
                 radius = i[2]
 
                 try:
-                    is_red = self.colorsegmentation(src, center)        
+                    is_red = self.colorsegmentation(src, center)
                 except IndexError as e:
-                    is_red = False
+                    is_red = True
 
                 if is_red:
                     cv2.circle(src, center, radius, (255, 0, 255), 3)
@@ -91,11 +91,9 @@ class cv_converter:
     @staticmethod
     def colorsegmentation(img, center):
         img_hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV_FULL)
+        hsv = img_hsv[center[1], center[0]]
 
-        hsv = img_hsv[center[0], center[1]]
-        print(hsv)
-
-        if 0 < hsv[0] < 180 and 100 < hsv[1] < 255 and 0 < hsv[2] < 255:
+        if 170 <= hsv[0] <= 180 and 100 <= hsv[1] <= 255 and 0 <= hsv[2] <= 255:
             return True
         else:
             return False
