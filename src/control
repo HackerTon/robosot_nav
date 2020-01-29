@@ -1,0 +1,41 @@
+#!/usr/bin/env python2.7
+
+import tty
+import sys
+import termios
+
+import rospy
+import cv2
+import numpy as np
+from geometry_msgs.msg import Twist
+
+
+def readKey():
+    return sys.stdin.read(1)[0]
+
+
+if __name__ == "__main__":
+    rospy.init_node('remotecontrol', anonymous=True)
+
+    org_sett = termios.tcgetattr(sys.stdin)
+    tty.setcbreak(sys.stdin)
+
+    publi = rospy.Publisher('/cmd_vel', Twist, queue_size=1)
+
+    while not rospy.is_shutdown():
+        key = readKey()
+        twist = Twist()
+
+        if key == chr(27):
+            break
+        elif key == chr(119):
+            twist.linear.x = 0.1
+
+            print('moving')
+        else:
+            twist.linear.x = 0.0
+            print('stop')
+
+        publi.publish(twist)
+
+    termios.tcsetattr(sys.stdin, termios.TCSADRAIN, org_sett)
