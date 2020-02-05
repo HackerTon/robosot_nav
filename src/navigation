@@ -1,0 +1,197 @@
+#!/usr/bin/env python
+
+import rospy
+import actionlib
+import logging
+import sys
+import numpy as np
+
+from geometry_msgs.msg import Twist, Point32, Quaternion, Pose, Point
+from nav_msgs.msg import Odometry, OccupancyGrid, MapMetaData
+from move_base_msgs.msg import MoveBaseAction, MoveBaseGoal
+from actionlib_msgs.msg import GoalStatus
+from tf.transformations import quaternion_from_euler
+
+search_point = ([1.38, 1.28], [1.06, -1.21], [-0.968, 1.41], [-1.01, -1.43])
+
+
+def goal(pos, quater):
+    goal = MoveBaseGoal()
+    goal.target_pose.header.frame_id = 'map'
+    goal.target_pose.header.stamp = rospy.Time.now()
+
+    goal.target_pose.pose = Pose(
+        Point(pos[0], pos[1], pos[2]), Quaternion(quater[0], quater[1], quater[2], quater[3]))
+
+    return goal
+
+
+class Accumulator:
+    def __init__(self, ball_thresh=100000, stop_thresh=50000):
+        self.ball_thresh = ball_thresh
+        self.stop_thresh = stop_thresh
+
+        self.ball_accm = 0
+        self.stop_accm = 0
+        self.status = 0
+        self.trigger = False
+
+    def _process(self, point):
+        if point[0] != -1.0:
+            self.ball_accm += 1
+        else:
+            self.stop_accm += 1
+
+        if self.ball_accm > self.ball_thresh and self.stop_accm < self.stop_thresh:
+            self.status = 1
+            self.ball_accm = 0
+            self.stop_accm = 0
+        elif self.stop_accm > self.stop_thresh and self.ball_accm < self.ball_thresh:
+            self.status = 0
+            self.ball_accm = 0
+            self.stop_accm = 0
+
+    def filter(self, point):
+        self._process(point)
+
+        if self.status == 1:
+            if not self.trigger:
+                self.trigger = True
+        else:
+            if self.trigger:
+                self.trigger = False
+                self.status = 2
+
+        return self.status
+
+
+class Pointsub:
+    def __init__(self):
+        self.coor = [-1.0, -1.0]
+        self.point = rospy.Subscriber('pointer/point1', Point32, self.callback)
+
+    def callback(self, data):
+        self.coor = [data.x, data.y]
+
+
+class Navigation:
+    def __init__(self):
+        self.base_move = actionlib.SimpleActionClient(
+            'move_base', MoveBaseAction)
+        self.base_move.wait_for_server()
+
+    def move_goal(self, pos=(0.0, 0.0, 0.0), quat=(0.0, 0.0, 0.0, 1)):
+        target_goal = goal(pos, quat)
+
+        print('Moving to point x: {0:.2f} y:{1:.2f} z: {2:.2f}'.format(
+            pos[0], pos[1], pos[2]))
+        self.base_move.send_goal_and_wait(target_goal)
+
+        return self.base_move.get_state()
+
+    def cancel_goals(self):
+        self.base_move.cancel_all_goals()
+
+
+class Generator:
+    def __init__(self):
+        self.map = None
+        self.resolution = None
+        self.width = None
+        self.height = None
+        self.origin = None
+
+        rospy.Subscriber('/move_base/global_costmap/costmap',
+                         OccupancyGrid, self.mapcallback)
+
+    def mapcallback(self, data):
+        self.map = np.reshape(data.data, [79, 100])
+
+        self.resolution = data.info.resolution
+        self.width = data.info.width
+        self.height = data.info.height
+        self.origin = [data.info.origin.position.x,
+                       data.info.origin.position.y]
+
+    def generate(self):
+        max_width = self.width * self.resolution
+        max_height = self.height * self.resolution
+
+        rand_x = np.random.uniform(
+            self.origin[0] + 0.1, self.origin[0] + max_width)
+
+        rand_y = np.random.uniform(
+            self.origin[1] + 0.1, self.origin[1] + max_height)
+
+        cell_x = int(rand_x / self.resolution)
+        cell_y = int(rand_y / self.resolution)
+
+        if self.map is not None:
+            if self.map[cell_y, cell_x] < 50:
+                return rand_x, rand_y
+            else:
+                return self.generate()
+        else:
+            print('map not , trying again')
+            return self.generate()
+
+
+def main(args):
+    rospy.init_node('navigation_node', anonymous=True)
+
+    points = Pointsub()
+    navigator = Navigation()
+    accum = Accumulator()
+    gen = Generator()
+
+    cmd_vel = rospy.Publisher('cmd_vel', Twist, queue_size=1)
+
+    rate = rospy.Rate(1)
+    count = 0
+
+    print('starting')
+    rospy.sleep(3)
+
+    while not rospy.is_shutdown():
+        twist = Twist()
+
+        cur_point = points.coor
+
+        result = accum.filter(cur_point)
+
+        # Ball founded, moving to ball
+        if result is 1:
+            twist.angular.z = (160 - cur_point[0]) * 0.005
+            twist.linear.x = 0.1
+
+            cmd_vel.publish(twist)
+
+        # Ball captured, moving ball to target location
+        elif result is 2:
+            twist.angular.x = 0.2
+            cmd_vel.publish(twist)
+            rospy.sleep(2)
+
+            navigator.move_goal([2.22, 0.661, 0.0])
+
+            if nav_status is 3:
+                twist.linear.x = 0.1
+                cmd_vel.publish(twist)
+                rospy.sleep(2)
+            else:
+                break
+                print('system failure')
+
+        # No ball was found, change search location
+        elif result is 0:
+            if count is not 4:
+                x, y = gen.generate()
+                nav_status = navigator.move_goal([x, y, 0.0])
+
+                count += 1
+            else:
+                count = 0
+
+
+if __name__ == "__main__":
+    main(sys.argv)

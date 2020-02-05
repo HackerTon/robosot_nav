@@ -1,4 +1,4 @@
-#!/usr/bin/env python2.7
+#!/usr/bin/env python
 
 import rospy
 import cv2
@@ -33,7 +33,7 @@ def compute_contours(image, org_image, range_min, range_max):
 class cv_converter:
     def __init__(self):
         self.image_sub = rospy.Subscriber(
-            'camera/image', Image, self.callback)
+            'camera/image/compressed', CompressedImage, self.callback)
         self.image_pub = rospy.Publisher(
             'after/image/compressed', CompressedImage, queue_size=1)
 
@@ -44,8 +44,7 @@ class cv_converter:
 
     def callback(self, data):
         try:
-            cv_image = self.bridge.imgmsg_to_cv2(data)
-            # cv_image = self.bridge.compressed_imgmsg_to_cv2(data)
+            cv_image = self.bridge.compressed_imgmsg_to_cv2(data)
         except CvBridgeError as e:
             print(e)
         src = cv_image
@@ -55,8 +54,8 @@ class cv_converter:
         blur = 5
         dp = 1
         minDist = rows / 8
-        param1 = 77
-        param2 = 19
+        param1 = 100
+        param2 = 14
         minRadius = 0
         maxRadius = 40
 
@@ -81,8 +80,11 @@ class cv_converter:
 
                 if is_red:
                     cv2.circle(src, center, radius, (255, 0, 255), 3)
+                    point = Point32(center[0], center[1], 0.0)
+                    self.point_pub.publish(point)
+        else:
+            self.point_pub.publish(Point32(-1.0, -1.0, -1.0))
         try:
-            src = cv2.cvtColor(src, cv2.COLOR_BGR2RGB)
             org_image = self.bridge.cv2_to_compressed_imgmsg(src)
             self.image_pub.publish(org_image)
         except CvBridgeError as e:
@@ -93,7 +95,7 @@ class cv_converter:
         img_hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV_FULL)
         hsv = img_hsv[center[1], center[0]]
 
-        if 170 <= hsv[0] <= 180 and 100 <= hsv[1] <= 255 and 0 <= hsv[2] <= 255:
+        if 0 <= hsv[0] <= 10 and 100 <= hsv[1] <= 255 and 100 <= hsv[2] <= 255:
             return True
         else:
             return False
@@ -105,6 +107,7 @@ if __name__ == "__main__":
     imageconverter = cv_converter()
 
     print('red_camera running!')
-    while not rospy.is_shutdown():
-        pass
+
+    rospy.spin()
+
     print('red_camera stop!')
