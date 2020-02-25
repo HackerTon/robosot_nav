@@ -10,7 +10,7 @@ from geometry_msgs.msg import Twist, Point32, Quaternion, Pose, Point
 from nav_msgs.msg import Odometry, OccupancyGrid, MapMetaData
 from move_base_msgs.msg import MoveBaseAction, MoveBaseGoal
 from actionlib_msgs.msg import GoalStatus
-from tf.transformations import quaternion_from_euler
+from tf.transformations import quaternion_from_euler, euler_from_quaternion
 
 search_point = ([1.38, 1.28], [1.06, -1.21], [-0.968, 1.41], [-1.01, -1.43])
 
@@ -76,9 +76,17 @@ class Pointsub:
 
 class Navigation:
     def __init__(self):
+        self.position = None
+
+        rospy.Subscriber('odom', Odometry, self.odomcallback, queue_size=1)
+
         self.base_move = actionlib.SimpleActionClient(
             'move_base', MoveBaseAction)
         self.base_move.wait_for_server()
+
+    def odomcallback(self, data):
+        self.position = [data.pose.pose.position.x,
+                         data.pose.pose.position.y - 0.048]
 
     def move_goal(self, pos=(0.0, 0.0, 0.0), quat=(0.0, 0.0, 0.0, 1)):
         target_goal = goal(pos, quat)
@@ -91,6 +99,11 @@ class Navigation:
 
     def cancel_goals(self):
         self.base_move.cancel_all_goals()
+
+    def rotate90(self):
+        x, y = self.position
+
+        self.move_goal((x, y, 0.0), quaternion_from_euler(0, 0, 90))
 
 
 class Generator:
@@ -118,7 +131,7 @@ class Generator:
         max_height = self.height * self.resolution
 
         rand_x = np.random.uniform(
-            self.origin[0] + 0.1, self.origin[0] + max_width)
+            self.origin[0] + 0.1, 2.22)
 
         rand_y = np.random.uniform(
             self.origin[1] + 0.1, self.origin[1] + max_height)
@@ -136,15 +149,26 @@ class Generator:
             return self.generate()
 
 
+x = y = z = 0.0
+
+
+def o_dom(data):
+    global x, y, z
+    oq = data.pose.pose.orientation
+    (x, y, z) = euler_from_quaternion([oq.x, oq.y, oq.z, oq.w])
+
+
 def main(args):
     rospy.init_node('navigation_node', anonymous=True)
 
     points = Pointsub()
     navigator = Navigation()
+
     accum = Accumulator()
     gen = Generator()
 
     cmd_vel = rospy.Publisher('cmd_vel', Twist, queue_size=1)
+    rospy.Subscriber('odom', Odometry, o_dom)
 
     rate = rospy.Rate(1)
     count = 0
@@ -152,45 +176,66 @@ def main(args):
     print('starting')
     rospy.sleep(3)
 
+    twist = Twist()
     while not rospy.is_shutdown():
-        twist = Twist()
+        try:
 
-        cur_point = points.coor
+            error = 99
 
-        result = accum.filter(cur_point)
+            print('Searching for ball')
 
-        # Ball founded, moving to ball
-        if result is 1:
-            twist.angular.z = (160 - cur_point[0]) * 0.005
-            twist.linear.x = 0.1
+            # PID need to be tune
+            while error > 0.05:
+                twist.angular.z = 0.05 * ((np.pi * 90) / 180 - z)
+                twist.linear.x = 0.0
+                cmd_vel.publish(twist)
 
-            cmd_vel.publish(twist)
+                error = twist.angular.z
 
-        # Ball captured, moving ball to target location
-        elif result is 2:
-            twist.angular.x = 0.2
-            cmd_vel.publish(twist)
-            rospy.sleep(2)
+                cur_point = points.coor
+                result = accum.filter(cur_point)
 
-            navigator.move_goal([2.22, 0.661, 0.0])
+                if result is 1:
+                    break
+            # 
 
-            if nav_status is 3:
+            print('Status: {}'.format(result))
+
+            # Ball founded, moving to ball
+            if result is 1:
+                twist.angular.z = (160 - cur_point[0]) * 0.005
                 twist.linear.x = 0.1
+
+                cmd_vel.publish(twist)
+
+            # Ball captured, moving ball to target location
+            elif result is 2:
+                twist.angular.x = 0.2
+                twist.linear.x = 0.0
                 cmd_vel.publish(twist)
                 rospy.sleep(2)
-            else:
-                break
-                print('system failure')
 
-        # No ball was found, change search location
-        elif result is 0:
-            if count is not 4:
-                x, y = gen.generate()
-                nav_status = navigator.move_goal([x, y, 0.0])
+                navigator.move_goal([2.22, 0.661, 0.0])
 
-                count += 1
-            else:
-                count = 0
+                if nav_status is 3:
+                    twist.linear.x = 0.1
+                    cmd_vel.publish(twist)
+                    rospy.sleep(2)
+                else:
+                    break
+                    print('system failure')
+
+            # No ball was found, change search location
+            elif result is 0:
+                if count is not 4:
+                    x, y = gen.generate()
+                    nav_status = navigator.move_goal([x, y, 0.0])
+
+                    count += 1
+                else:
+                    count = 0
+        except KeyboardInterrupt:
+            return
 
 
 if __name__ == "__main__":
