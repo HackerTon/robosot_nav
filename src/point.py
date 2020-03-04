@@ -7,12 +7,6 @@ from cv_bridge import CvBridge, CvBridgeError
 from sensor_msgs.msg import CompressedImage, Image
 from geometry_msgs.msg import Point32
 
-# CONSTANT
-# RED
-MIN_RED = np.asarray([0, 25, 0])
-MAX_RED = np.asarray([10, 255, 255])
-
-
 def compute_contours(image, org_image, range_min, range_max):
     binary_image = cv2.inRange(image, range_min, range_max)
 
@@ -41,6 +35,7 @@ class cv_converter:
             '/pointer/point1', Point32, queue_size=1)
 
         self.bridge = CvBridge()
+        rospy.loginfo('Detection starts')
 
     def callback(self, data):
         try:
@@ -88,7 +83,7 @@ class cv_converter:
             org_image = self.bridge.cv2_to_compressed_imgmsg(src)
             self.image_pub.publish(org_image)
         except CvBridgeError as e:
-            print(e.message)
+            rospy.logerr(e.msg)
 
     @staticmethod
     def colorsegmentation(img, center):
@@ -106,8 +101,5 @@ if __name__ == "__main__":
 
     imageconverter = cv_converter()
 
-    print('red_camera running!')
-
     rospy.spin()
 
-    print('red_camera stop!')

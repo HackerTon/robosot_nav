@@ -1,0 +1,4 @@
+<launch>
+  <node pkg="rosot_nav" type="point.py" name="balldetection" output="screen">
+  </node>
+</launch>

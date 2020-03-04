@@ -4,7 +4,7 @@ Tune dwaplannerros, amcl and costmap parameter for turtlebot3 burger in robosot 
 ## Instruction
 Replace YOURMAP with something like /home/ubuntu/map.yaml
 1) roslaunch rosot_nav turtlebot3_navigation.launch map_file:=YOURMAP
-2) rosrun rosot_nav point
+2) roslaunch rosot_nav balldetection.launch
 3) rosrun rosot_nav navigation
 
 ### TODO
