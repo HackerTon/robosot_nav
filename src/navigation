@@ -14,7 +14,6 @@ from tf.transformations import quaternion_from_euler, euler_from_quaternion
 
 search_point = ([1.38, 1.28], [1.06, -1.21], [-0.968, 1.41], [-1.01, -1.43])
 
-
 def goal(pos, quater):
     goal = MoveBaseGoal()
     goal.target_pose.header.frame_id = 'map'
@@ -179,7 +178,6 @@ def main(args):
     twist = Twist()
     while not rospy.is_shutdown():
         try:
-
             error = 99
 
             print('Searching for ball')

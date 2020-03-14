@@ -7,22 +7,6 @@ from cv_bridge import CvBridge, CvBridgeError
 from sensor_msgs.msg import CompressedImage, Image
 from geometry_msgs.msg import Point32
 
-def compute_contours(image, org_image, range_min, range_max):
-    binary_image = cv2.inRange(image, range_min, range_max)
-
-    _, contours, _ = cv2.findContours(
-        binary_image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-    sorted_contours = [cnt for cnt in contours if cv2.contourArea(cnt) > 120]
-
-    circles = []
-
-    for contour in sorted_contours:
-        (x, y), r = cv2.minEnclosingCircle(contour)
-        circles.append([(int(x), int(y)), int(r)])
-
-    return circles
-
 
 class cv_converter:
     def __init__(self):
