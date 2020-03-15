@@ -38,14 +38,18 @@ class STATUSTYPE(Enum):
 
 
 class Accumulator:
-    def __init__(self, ball_thresh=1000, stop_thresh=5000):
+    def __init__(self, ball_thresh=5000, stop_thresh=9000):
         self.ball_thresh = ball_thresh
         self.stop_thresh = stop_thresh
 
         self.ball_accm = 0
         self.stop_accm = 0
-        self.status = 0
+        self.status = True
         self.trigger = False
+
+    def reset(self):
+        self.ball_accm = 0
+        self.stop_accm = 0
 
     def _process(self, point):
         if point[0] != -1.0:
@@ -55,26 +59,26 @@ class Accumulator:
 
         # FOUND
         if self.ball_accm > self.ball_thresh and self.stop_accm < self.stop_thresh:
-            self.status = 1
+            self.status = True
             self.ball_accm = 0
             self.stop_accm = 0
 
         # NOT FOUND
         elif self.stop_accm > self.stop_thresh and self.ball_accm < self.ball_thresh:
-            self.status = 0
+            self.status = False
             self.ball_accm = 0
             self.stop_accm = 0
 
     def filter(self, point):
         self._process(point)
 
-        if self.status == 1:
+        if self.status:
             if not self.trigger:
                 self.trigger = True
         else:
             if self.trigger:
                 self.trigger = False
-                self.status = 2
+                self.status = False
 
         return self.status
 
@@ -186,12 +190,15 @@ def main(args):
     rospy.Subscriber('odom', Odometry, o_dom)
 
     rate = rospy.Rate(1)
-    count = 0
 
     print('starting')
     rospy.sleep(3)
 
+    count = 0
+
+    accum = Accumulator()
     twist = Twist()
+    
     while not rospy.is_shutdown():
         filter_status = accum.filter(points.coor)
         current_status = STATUSTYPE.SEARCHING if (
@@ -202,7 +209,7 @@ def main(args):
 
             error = 1
             while error > 0.05:
-                error = (np.pi / 360) * 180 - z
+                error = (np.pi / 360) * 270 - z
 
                 twist.angular.z = 0.20 * error
                 twist.linear.x = 0.0
@@ -219,11 +226,9 @@ def main(args):
         if current_status is STATUSTYPE.MOVINGTOBALL:
             print('{} \n'.format(current_status))
 
-            moving = True
-
-            while moving:
-                if points.coor[0] == -1:
-                    moving = False
+            while True:
+                if not accum.filter(points.coor):
+                    break
 
                 twist.angular.z = (160 - points.coor[0]) * 0.005
                 twist.linear.x = 0.05
@@ -234,13 +239,12 @@ def main(args):
                 cmd_vel.publish(twist)
 
             twist.angular.z = 0.0
-            twist.linear.x = 0.0
-            cmd_vel.publish(twist)
-
-            twist.angular.x = 0.0
             twist.linear.x = 0.12
             cmd_vel.publish(twist)
-            rospy.sleep(2)
+            rospy.sleep(5)
+
+            twist.angular.z = 0.0
+            twist.linear.x = 0.0
 
             nav_status = navigator.move_goal([2.22, 0.661, 0.0])
 
