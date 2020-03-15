@@ -64,16 +64,18 @@ class cv_converter:
 
         if circles is not None:
             circles = np.around(circles).astype(np.int)
-            for i in circles[0, :]:
-                center = (i[0], i[1])
-                radius = i[2]
 
-                try:
-                    is_red = self.colorsegmentation(src, center)
-                except IndexError as e:
-                    is_red = True
+            i = circles[0, 0]
+            center = (i[0], i[1])
+            radius = i[2]
 
-                if is_red:
+            try:
+                is_red = self.colorsegmentation(src, center)
+            except IndexError as e:
+                is_red = True
+
+            if is_red:
+                if radius > 5:
                     cv2.circle(src, center, radius, (255, 0, 255), 3)
                     point = Point32(center[0], center[1], 0.0)
                     self.point_pub.publish(point)

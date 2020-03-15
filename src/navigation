@@ -219,17 +219,23 @@ def main(args):
         if current_status is STATUSTYPE.MOVINGTOBALL:
             print('{} \n'.format(current_status))
 
-            while points.coor[0] != -1:
-                try:
-                    twist.angular.z = (160 - points.coor[0]) * 0.005
-                    twist.linear.x = twist.angular.z
+            moving = True
 
-                    if twist.linear.x < 0.10:
-                        twist.linear.x = 0.10
-                except ZeroDivisionError:
-                    twist.linear.x = 0
+            while moving:
+                if points.coor[0] == -1:
+                    moving = False
+
+                twist.angular.z = (160 - points.coor[0]) * 0.005
+                twist.linear.x = 0.05
+
+                if twist.linear.x > 0.10:
+                    twist.linear.x = 0.10
 
                 cmd_vel.publish(twist)
+
+            twist.angular.z = 0.0
+            twist.linear.x = 0.0
+            cmd_vel.publish(twist)
 
             twist.angular.x = 0.0
             twist.linear.x = 0.12
@@ -239,36 +245,37 @@ def main(args):
             nav_status = navigator.move_goal([2.22, 0.661, 0.0])
 
             if nav_status is 3:
-                twist.angular.x = 0.0
+                twist.angular.z = 0.0
                 twist.linear.x = 0.0
                 cmd_vel.publish(twist)
                 rospy.sleep(3)
 
                 print('Move forward')
-                twist.angular.x = 0.0
+                twist.angular.z = 0.0
                 twist.linear.x = 0.1
                 cmd_vel.publish(twist)
                 rospy.sleep(2)
 
-                twist.angular.x = 0.0
+                twist.angular.z = 0.0
                 twist.linear.x = 0.0
                 cmd_vel.publish(twist)
                 rospy.sleep(2)
 
                 print('Move backward')
-                twist.angular.x = 0.0
+                twist.angular.z = 0.0
                 twist.linear.x = -0.1
                 cmd_vel.publish(twist)
-                rospy.sleep(2)
+                rospy.sleep(3)
 
                 print('Rotate facing back')
-                twist.angular.x = 0.3
+                twist.angular.z = 0.3
                 twist.linear.x = 0.0
                 cmd_vel.publish(twist)
                 rospy.sleep(5)
             else:
-                break
                 print('system failure')
+                break
+
 
         elif current_status == STATUSTYPE.MOVINGTORANDOM:
             print('{}'.format(current_status))
@@ -281,67 +288,6 @@ def main(args):
             else:
                 count = 0
 
-        # try:
-        #     if current_status is STATUSTYPE.SEARCHING:
-        #         error = 99
 
-        #         # PID need to be tune
-        #         while error > 0.05:
-        #             twist.angular.z = 0.05 * ((np.pi / 360) * 90 - z)
-        #             twist.linear.x = 0.0
-        #             cmd_vel.publish(twist)
-
-        #             error = twist.angular.z
-
-        #             cur_point = points.coor
-        #             result = accum.filter(cur_point)
-
-        #             if DEBUG:
-        #                 print('Turning error: {}'.format(error))
-        #                 print('Accumulator: {}'.format(result))
-
-        #             if result is 1:
-        #                 break
-        #         #
-
-        #     # Ball founded, moving to ball
-        #     if current_status is STATUSTYPE.MOVINGTOBALL:
-        #         while accum.filter(points.coor) is 1:
-        #             twist.angular.z = (160 - cur_point[0]) * 0.005
-        #             twist.linear.x = 1 / -twist.angular.z
-
-        #             if twist.linear.x < -0.05:
-        #                 twist.linear.x = -0.05
-
-        #             cmd_vel.publish(twist)
-        #     # Ball captured, moving ball to target location
-        #     elif current_status is STATUSTYPE.MOVINGTOTARGET:
-        #         while True:
-        #             twist.angular.x = 0.2
-        #             twist.linear.x = 0.0
-        #             cmd_vel.publish(twist)
-        #             rospy.sleep(2)
-
-        #             nav_status = navigator.move_goal([2.22, 0.661, 0.0])
-
-        #             if nav_status is 3:
-        #                 twist.linear.x = 0.1
-        #                 cmd_vel.publish(twist)
-        #                 rospy.sleep(2)
-        #             else:
-        #                 break
-        #                 print('system failure')
-
-        #     # No ball was found, change search location
-        #     elif current_status is STATUSTYPE.MOVINGTORANDOM:
-        #         if count is not 4:
-        #             x, y = gen.generate()
-        #             nav_status = navigator.move_goal([x, y, 0.0])
-
-        #             count += 1
-        #         else:
-        #             count = 0
-        # except KeyboardInterrupt:
-        #     print('Program Interrupt by user!')
 if __name__ == "__main__":
     main(sys.argv)
