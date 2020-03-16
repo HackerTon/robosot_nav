@@ -48,14 +48,14 @@ class cv_converter:
 
         blur = 5
         dp = 1
-        minDist = rows / 8
+        minDist = 1000
         param1 = 100
         param2 = 14
-        minRadius = 0
-        maxRadius = 40
+        minRadius = 10
+        maxRadius = 30
 
         gray = cv2.cvtColor(src, cv2.COLOR_BGR2GRAY)
-        gray = cv2.GaussianBlur(gray, (9, 9), 2, 2)
+        gray = cv2.GaussianBlur(gray, (5, 5), 2)
 
         rows = gray.shape[0]
         circles = cv2.HoughCircles(gray, cv2.HOUGH_GRADIENT, dp, minDist,
@@ -65,20 +65,20 @@ class cv_converter:
         if circles is not None:
             circles = np.around(circles).astype(np.int)
 
-            i = circles[0, 0]
-            center = (i[0], i[1])
-            radius = i[2]
+            for i in circles[0, :]:    
+                center = (i[0], i[1])
+                radius = i[2]
+                
+                try:
+                    is_red = self.colorsegmentation(src, center)
+                except IndexError as e:
+                    is_red = True
 
-            try:
-                is_red = self.colorsegmentation(src, center)
-            except IndexError as e:
-                is_red = True
-
-            if is_red:
-                if radius > 5:
+                if is_red:
                     cv2.circle(src, center, radius, (255, 0, 255), 3)
                     point = Point32(center[0], center[1], 0.0)
                     self.point_pub.publish(point)
+
         else:
             self.point_pub.publish(Point32(-1.0, -1.0, -1.0))
         try:

@@ -177,13 +177,37 @@ def o_dom(data):
     (x, y, z) = euler_from_quaternion([oq.x, oq.y, oq.z, oq.w])
 
 
+def test(args):
+    rospy.init_node('test_navigation', anonymous=True)
+
+    points = Pointsub()
+    rate = rospy.Rate(5)
+
+    prev = None
+
+    print('test starts')
+    while not rospy.is_shutdown():
+        point = np.asanyarray(points.coor)
+
+        if point[0] > -1:
+            if prev is None:
+                prev = point
+
+            # Above 60 means detection jump
+            print(rate.last_time, np.linalg.norm(point - prev))
+            prev = point
+        else:
+            prev = None
+
+        rate.sleep()
+
+
 def main(args):
     rospy.init_node('navigation_node', anonymous=True)
 
     points = Pointsub()
     navigator = Navigation()
 
-    accum = Accumulator()
     gen = Generator()
 
     cmd_vel = rospy.Publisher('cmd_vel', Twist, queue_size=1)
@@ -198,7 +222,7 @@ def main(args):
 
     accum = Accumulator()
     twist = Twist()
-    
+
     while not rospy.is_shutdown():
         filter_status = accum.filter(points.coor)
         current_status = STATUSTYPE.SEARCHING if (
@@ -226,9 +250,20 @@ def main(args):
         if current_status is STATUSTYPE.MOVINGTOBALL:
             print('{} \n'.format(current_status))
 
+            prev = None
+
             while True:
-                if not accum.filter(points.coor):
-                    break
+                point = np.asanyarray(points.coor)
+
+                if point[0] > -1:
+                    if prev is None:
+                        prev = point
+
+                    # Above 60 means detection jump
+                    print(rate.last_time, np.linalg.norm(point - prev))
+                    prev = point
+                else:
+                    prev = None
 
                 twist.angular.z = (160 - points.coor[0]) * 0.005
                 twist.linear.x = 0.05
@@ -280,7 +315,6 @@ def main(args):
                 print('system failure')
                 break
 
-
         elif current_status == STATUSTYPE.MOVINGTORANDOM:
             print('{}'.format(current_status))
 
@@ -294,4 +328,5 @@ def main(args):
 
 
 if __name__ == "__main__":
-    main(sys.argv)
+    # main(sys.argv)
+    test(sys.argv)
