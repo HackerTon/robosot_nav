@@ -6,6 +6,8 @@ import logging
 import sys
 import numpy as np
 
+
+from enum import Enum
 from geometry_msgs.msg import Twist, Point32, Quaternion, Pose, Point
 from nav_msgs.msg import Odometry, OccupancyGrid, MapMetaData
 from move_base_msgs.msg import MoveBaseAction, MoveBaseGoal
@@ -13,6 +15,8 @@ from actionlib_msgs.msg import GoalStatus
 from tf.transformations import quaternion_from_euler, euler_from_quaternion
 
 search_point = ([1.38, 1.28], [1.06, -1.21], [-0.968, 1.41], [-1.01, -1.43])
+
+DEBUG = False
 
 
 def goal(pos, quater):
@@ -26,15 +30,26 @@ def goal(pos, quater):
     return goal
 
 
+class STATUSTYPE(Enum):
+    SEARCHING = 0
+    MOVINGTOBALL = 1
+    MOVINGTOTARGET = 2
+    MOVINGTORANDOM = 3
+
+
 class Accumulator:
-    def __init__(self, ball_thresh=100000, stop_thresh=50000):
+    def __init__(self, ball_thresh=5000, stop_thresh=9000):
         self.ball_thresh = ball_thresh
         self.stop_thresh = stop_thresh
 
         self.ball_accm = 0
         self.stop_accm = 0
-        self.status = 0
+        self.status = True
         self.trigger = False
+
+    def reset(self):
+        self.ball_accm = 0
+        self.stop_accm = 0
 
     def _process(self, point):
         if point[0] != -1.0:
@@ -42,25 +57,28 @@ class Accumulator:
         else:
             self.stop_accm += 1
 
+        # FOUND
         if self.ball_accm > self.ball_thresh and self.stop_accm < self.stop_thresh:
-            self.status = 1
+            self.status = True
             self.ball_accm = 0
             self.stop_accm = 0
+
+        # NOT FOUND
         elif self.stop_accm > self.stop_thresh and self.ball_accm < self.ball_thresh:
-            self.status = 0
+            self.status = False
             self.ball_accm = 0
             self.stop_accm = 0
 
     def filter(self, point):
         self._process(point)
 
-        if self.status == 1:
+        if self.status:
             if not self.trigger:
                 self.trigger = True
         else:
             if self.trigger:
                 self.trigger = False
-                self.status = 2
+                self.status = False
 
         return self.status
 
@@ -83,6 +101,7 @@ class Navigation:
         self.base_move = actionlib.SimpleActionClient(
             'move_base', MoveBaseAction)
         self.base_move.wait_for_server()
+        self.cancel_goals()
 
     def odomcallback(self, data):
         self.position = [data.pose.pose.position.x,
@@ -158,85 +177,156 @@ def o_dom(data):
     (x, y, z) = euler_from_quaternion([oq.x, oq.y, oq.z, oq.w])
 
 
+def test(args):
+    rospy.init_node('test_navigation', anonymous=True)
+
+    points = Pointsub()
+    rate = rospy.Rate(5)
+
+    prev = None
+
+    print('test starts')
+    while not rospy.is_shutdown():
+        point = np.asanyarray(points.coor)
+
+        if point[0] > -1:
+            if prev is None:
+                prev = point
+
+            # Above 60 means detection jump
+            print(rate.last_time, np.linalg.norm(point - prev))
+            prev = point
+        else:
+            prev = None
+
+        rate.sleep()
+
+
 def main(args):
     rospy.init_node('navigation_node', anonymous=True)
 
     points = Pointsub()
     navigator = Navigation()
 
-    accum = Accumulator()
     gen = Generator()
 
     cmd_vel = rospy.Publisher('cmd_vel', Twist, queue_size=1)
     rospy.Subscriber('odom', Odometry, o_dom)
 
     rate = rospy.Rate(1)
-    count = 0
 
     print('starting')
     rospy.sleep(3)
 
+    count = 0
+
+    accum = Accumulator()
     twist = Twist()
+
     while not rospy.is_shutdown():
-        try:
+        filter_status = accum.filter(points.coor)
+        current_status = STATUSTYPE.SEARCHING if (
+            points.coor[0] == -1) else STATUSTYPE.MOVINGTOBALL
 
-            error = 99
+        if current_status is STATUSTYPE.SEARCHING:
+            print('{} \n'.format(current_status))
 
-            print('Searching for ball')
-
-            # PID need to be tune
+            error = 1
             while error > 0.05:
-                twist.angular.z = 0.05 * ((np.pi * 90) / 180 - z)
+                error = (np.pi / 360) * 270 - z
+
+                twist.angular.z = 0.20 * error
+                twist.linear.x = 0.0
+
+                cmd_vel.publish(twist)
+                filter_status = 1 if points.coor[0] != -1 else 0
+
+                if filter_status is 1:
+                    current_status = STATUSTYPE.MOVINGTOBALL
+                    break
+                else:
+                    current_status = STATUSTYPE.MOVINGTORANDOM
+
+        if current_status is STATUSTYPE.MOVINGTOBALL:
+            print('{} \n'.format(current_status))
+
+            prev = None
+
+            while True:
+                point = np.asanyarray(points.coor)
+
+                if point[0] > -1:
+                    if prev is None:
+                        prev = point
+
+                    # Above 60 means detection jump
+                    print(rate.last_time, np.linalg.norm(point - prev))
+                    prev = point
+                else:
+                    prev = None
+
+                twist.angular.z = (160 - points.coor[0]) * 0.005
+                twist.linear.x = 0.05
+
+                if twist.linear.x > 0.10:
+                    twist.linear.x = 0.10
+
+                cmd_vel.publish(twist)
+
+            twist.angular.z = 0.0
+            twist.linear.x = 0.12
+            cmd_vel.publish(twist)
+            rospy.sleep(5)
+
+            twist.angular.z = 0.0
+            twist.linear.x = 0.0
+
+            nav_status = navigator.move_goal([2.22, 0.661, 0.0])
+
+            if nav_status is 3:
+                twist.angular.z = 0.0
                 twist.linear.x = 0.0
                 cmd_vel.publish(twist)
+                rospy.sleep(3)
 
-                error = twist.angular.z
-
-                cur_point = points.coor
-                result = accum.filter(cur_point)
-
-                if result is 1:
-                    break
-            # 
-
-            print('Status: {}'.format(result))
-
-            # Ball founded, moving to ball
-            if result is 1:
-                twist.angular.z = (160 - cur_point[0]) * 0.005
+                print('Move forward')
+                twist.angular.z = 0.0
                 twist.linear.x = 0.1
-
                 cmd_vel.publish(twist)
+                rospy.sleep(2)
 
-            # Ball captured, moving ball to target location
-            elif result is 2:
-                twist.angular.x = 0.2
+                twist.angular.z = 0.0
                 twist.linear.x = 0.0
                 cmd_vel.publish(twist)
                 rospy.sleep(2)
 
-                navigator.move_goal([2.22, 0.661, 0.0])
+                print('Move backward')
+                twist.angular.z = 0.0
+                twist.linear.x = -0.1
+                cmd_vel.publish(twist)
+                rospy.sleep(3)
 
-                if nav_status is 3:
-                    twist.linear.x = 0.1
-                    cmd_vel.publish(twist)
-                    rospy.sleep(2)
-                else:
-                    break
-                    print('system failure')
+                print('Rotate facing back')
+                twist.angular.z = 0.3
+                twist.linear.x = 0.0
+                cmd_vel.publish(twist)
+                rospy.sleep(5)
+            else:
+                print('system failure')
+                break
 
-            # No ball was found, change search location
-            elif result is 0:
-                if count is not 4:
-                    x, y = gen.generate()
-                    nav_status = navigator.move_goal([x, y, 0.0])
+        elif current_status == STATUSTYPE.MOVINGTORANDOM:
+            print('{}'.format(current_status))
 
-                    count += 1
-                else:
-                    count = 0
-        except KeyboardInterrupt:
-            return
+            if count is not 4:
+                x, y = gen.generate()
+                nav_status = navigator.move_goal([x, y, 0.0])
+
+                count += 1
+            else:
+                count = 0
 
 
 if __name__ == "__main__":
-    main(sys.argv)
+    # main(sys.argv)
+    test(sys.argv)
